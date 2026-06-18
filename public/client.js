@@ -158,7 +158,7 @@ function rnd(min, max) {
 function ensureDiceCount(card, n) {
   while (card.dice.length < n) {
     const d = buildDie();
-    card.bowl.appendChild(d);
+    card.diceWrap.appendChild(d);
     card.dice.push(d);
   }
   while (card.dice.length > n) {
@@ -336,12 +336,15 @@ function getOrCreateCard(id) {
 
   const bowl = document.createElement('div');
   bowl.className = 'bowl';
+  const inner = document.createElement('div'); // 器の内側（サイコロが入る・落下をクリップ）
+  inner.className = 'bowl-inner';
+  bowl.appendChild(inner);
   const count = (state && state.diceCount) || 3;
   const dice = [];
   for (let i = 0; i < count; i++) {
     const d = buildDie();
     dice.push(d);
-    bowl.appendChild(d);
+    inner.appendChild(d);
   }
   bowl.addEventListener('click', () => {
     if (bowl.classList.contains('tappable')) tryRoll();
@@ -352,7 +355,7 @@ function getOrCreateCard(id) {
   result.innerHTML = '&nbsp;';
 
   root.append(phead, bowl, result);
-  cards[id] = { root, name, score, bowl, dice, result };
+  cards[id] = { root, name, score, bowl, diceWrap: inner, dice, result };
   return cards[id];
 }
 
