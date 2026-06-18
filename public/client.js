@@ -154,23 +154,61 @@ function doRoll() {
   el('resultTitle').className = 'result-title rolling';
   renderDots(h.rolls, true);
 
-  // 転がり
-  const tumble = setInterval(() => {
+  const spin = () => dice.forEach((d) => setFace(d, Math.ceil(rnd(0.001, 6))));
+
+  // ① 鉢の上から落とす（落下開始位置：上方・大きく回転）
+  dice.forEach((d) => {
+    d.style.transition = 'none';
+    d.style.transform = `translate(${rnd(-30, 30)}px,-150px) rotate(${rnd(-220, 220)}deg)`;
+    setFace(d, Math.ceil(rnd(0.001, 6)));
+  });
+  void wrap.offsetWidth; // リフローで開始位置を確定
+
+  const faceTimer = setInterval(spin, 55);
+  const sfx = setInterval(() => playClack(0.1, 2400), 130);
+
+  // ② 落下（加速しながら鉢の底へ）
+  requestAnimationFrame(() => {
     dice.forEach((d) => {
-      d.style.transition = 'transform .07s linear';
-      d.style.transform = `translate(${rnd(-10, 10)}px,${rnd(-8, 8)}px) rotate(${rnd(-40, 40)}deg)`;
-      setFace(d, Math.ceil(rnd(0.001, 6)));
+      d.style.transition = 'transform .26s cubic-bezier(.45,0,.75,1)';
+      d.style.transform = `translate(${rnd(-16, 16)}px,${rnd(4, 16)}px) rotate(${rnd(-90, 90)}deg)`;
     });
-  }, 75);
-  const sfx = setInterval(() => playClack(0.12, 2200), 120);
+  });
   playDrop();
 
+  // ③ バウンド（跳ね上がる）
   setTimeout(() => {
-    clearInterval(tumble);
+    playClack(0.4, 720);
+    dice.forEach((d) => {
+      d.style.transition = 'transform .12s ease-out';
+      d.style.transform = `translate(${rnd(-22, 22)}px,${rnd(-36, -20)}px) rotate(${rnd(-140, 140)}deg)`;
+    });
+  }, 280);
+
+  // ④ 着地して転がる
+  setTimeout(() => {
+    dice.forEach((d) => {
+      d.style.transition = 'transform .14s ease-in';
+      d.style.transform = `translate(${rnd(-15, 15)}px,${rnd(2, 12)}px) rotate(${rnd(-70, 70)}deg)`;
+    });
+  }, 405);
+
+  // ⑤ 小さく転がって減速
+  setTimeout(() => {
+    playClack(0.25, 1500);
+    dice.forEach((d) => {
+      d.style.transition = 'transform .12s ease-out';
+      d.style.transform = `translate(${rnd(-9, 9)}px,${rnd(-4, 7)}px) rotate(${rnd(-24, 24)}deg)`;
+    });
+  }, 560);
+
+  // ⑥ 確定（出目を表示して静止）
+  setTimeout(() => {
+    clearInterval(faceTimer);
     clearInterval(sfx);
     dice.forEach((d, i) => {
-      d.style.transition = 'transform .2s ease-out';
-      d.style.transform = `translate(${rnd(-6, 6)}px,${rnd(-5, 5)}px) rotate(${rnd(-10, 10)}deg)`;
+      d.style.transition = 'transform .18s ease-out';
+      d.style.transform = `translate(${rnd(-6, 6)}px,${rnd(-3, 5)}px) rotate(${rnd(-10, 10)}deg)`;
       setFace(d, h.dice[i]);
       d.classList.add('pop');
       setTimeout(() => d.classList.remove('pop'), 200);
@@ -188,7 +226,7 @@ function doRoll() {
 
     busy = false;
     render();
-  }, 1050);
+  }, 920);
 }
 
 function onAction() {
