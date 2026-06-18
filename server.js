@@ -23,6 +23,7 @@ const game = {
   round: 0, // 何局目か
   mode: '3', // '3'=3チロ（3個3振り） / '4'=4チロ（4個1振り）
   lastResult: null, // 直近の局の結果（勝者・飲む人・杯数）
+  tiebreak: null, // サドンデス中の情報（参加者・引き継ぐ杯数など）
   log: [],
 };
 
@@ -55,6 +56,10 @@ function publicState() {
     diceCount: modeConf().dice,
     maxRolls: modeConf().rolls,
     lastResult: game.lastResult,
+    suddenDeathIds:
+      game.phase === 'suddenDeath' && game.tiebreak
+        ? game.tiebreak.participantIds
+        : null,
     players: game.players.map((p) => ({
       id: p.id,
       name: p.name,
@@ -73,7 +78,7 @@ function broadcast() {
   io.emit('state', publicState());
 }
 
-/** 次の「まだ振り終えていない」プレイヤーへ手番を移す。全員終了ならラウンド終了。 */
+/** 次の「まだ振り終えていない」プレイヤーへ手番を移す。全員終了なら局を解決。 */
 function advanceTurn() {
   const n = game.players.length;
   for (let i = 1; i <= n; i++) {
@@ -83,7 +88,13 @@ function advanceTurn() {
       return;
     }
   }
-  endRound();
+  resolvePhase();
+}
+
+/** 現在のフェーズに応じて勝敗を解決する */
+function resolvePhase() {
+  if (game.phase === 'suddenDeath') endSuddenDeath();
+  else endRound();
 }
 
 function startRound() {
@@ -91,6 +102,7 @@ function startRound() {
   game.turn = 0;
   game.round += 1;
   game.lastResult = null;
+  game.tiebreak = null;
   game.players.forEach((p) => {
     p.dice = null;
     p.result = null;
@@ -133,31 +145,97 @@ function endRound() {
   const winners = contenders.filter((p) => C.compare(p.result, best.result) === 0);
   const losers = contenders.filter((p) => C.compare(p.result, worst.result) === 0);
 
-  // 全員が同じ強さ＝引き分け（飲みなし）
-  if (winners.length === contenders.length) {
-    game.lastResult = { draw: true };
-    addLog('🤝 引き分け（全員同じ強さ）。飲みなし');
+  const bestInfo = C.YakuInfo[best.result.yaku];
+  const gulps = Math.max(1, bestInfo.payout); // 勝者の役の倍率ぶん
+  const fullDraw = winners.length === contenders.length; // 全員同じ強さ
+  const ctx = {
+    gulps,
+    yakuLabel: bestInfo.label + pointLabel(best.result),
+    winnerNames: fullDraw ? [] : winners.map((w) => w.name),
+    fullDraw,
+  };
+
+  // 任意：単独勝ちならポイント加算
+  if (!fullDraw && winners.length === 1) winners[0].score += gulps;
+
+  // 最下位がタイ（複数人）→ サドンデスで一振り決着
+  if (losers.length >= 2) {
+    startSuddenDeath(losers, ctx);
     return;
   }
 
-  const bestInfo = C.YakuInfo[best.result.yaku];
-  const gulps = Math.max(1, bestInfo.payout); // 勝者の役の倍率ぶん
-  const yakuLabel = bestInfo.label + pointLabel(best.result);
-  const winnerNames = winners.map((w) => w.name);
+  finalizeDrink(ctx, losers, false);
+}
+
+/** サドンデス（一振り）開始。participants だけが対象。 */
+function startSuddenDeath(participants, ctx) {
+  game.phase = 'suddenDeath';
+  game.tiebreak = { ...ctx, participantIds: participants.map((p) => p.id) };
+  const partSet = new Set(game.tiebreak.participantIds);
+  game.players.forEach((p) => {
+    if (partSet.has(p.id)) {
+      p.dice = null;
+      p.result = null;
+      p.rolls = 0;
+      p.done = false;
+    } else {
+      p.done = true; // 不参加は見学（直前の出目はそのまま表示）
+    }
+  });
+  game.turn = game.players.findIndex((p) => partSet.has(p.id));
+  addLog(`⚔ 引き分け！ サドンデス（一振り）：${participants.map((p) => p.name).join('・')}`);
+}
+
+/** サドンデスの結果から飲む人を決める。また同点なら再サドンデス。 */
+function endSuddenDeath() {
+  game.phase = 'roundEnd';
+  const ctx = game.tiebreak || {};
+  const partSet = new Set(ctx.participantIds || []);
+  const parts = game.players.filter((p) => partSet.has(p.id) && p.result);
+
+  if (parts.length === 0) {
+    game.lastResult = { draw: true };
+    return;
+  }
+  if (parts.length === 1) {
+    finalizeDrink(ctx, parts, true);
+    return;
+  }
+
+  let worst = parts[0];
+  for (const p of parts) {
+    if (C.compare(p.result, worst.result) < 0) worst = p;
+  }
+  const losers = parts.filter((p) => C.compare(p.result, worst.result) === 0);
+
+  if (losers.length >= 2) {
+    addLog('⚔ またも同点！ 再サドンデス');
+    startSuddenDeath(losers, ctx);
+    return;
+  }
+  finalizeDrink(ctx, losers, true);
+}
+
+/** 最終結果（飲む人・杯数）を確定して表示用に格納する */
+function finalizeDrink(ctx, losers, suddenDeath) {
   const loserNames = losers.map((l) => l.name);
-
-  // 任意：勝者にポイント加算（単独勝ちのみ）
-  if (winners.length === 1) winners[0].score += gulps;
-
   game.lastResult = {
     draw: false,
-    winnerNames,
-    yakuLabel,
+    winnerNames: ctx.winnerNames || [],
+    yakuLabel: ctx.yakuLabel || '',
     loserNames,
-    gulps,
+    gulps: ctx.gulps,
+    suddenDeath: !!suddenDeath,
+    fullDraw: !!ctx.fullDraw,
   };
-  addLog(`🏆 ${winnerNames.join('・')}：${yakuLabel}`);
-  addLog(`🍺 ${loserNames.join('・')} が ${gulps}杯 飲む！`);
+  if (ctx.winnerNames && ctx.winnerNames.length) {
+    addLog(`🏆 ${ctx.winnerNames.join('・')}：${ctx.yakuLabel}`);
+  }
+  addLog(
+    `🍺 ${loserNames.join('・')} が ${ctx.gulps}杯 飲む！${
+      suddenDeath ? '（サドンデス）' : ''
+    }`
+  );
 }
 
 function resetGame() {
@@ -167,6 +245,7 @@ function resetGame() {
   game.round = 0;
   game.mode = '3';
   game.lastResult = null;
+  game.tiebreak = null;
   game.log = [];
 }
 
@@ -186,8 +265,8 @@ io.on('connection', (socket) => {
       dice: null,
       result: null,
       rolls: 0,
-      // 対戦中に参加した場合はそのラウンドは見学（次から参加）
-      done: game.phase === 'playing',
+      // 対局中・サドンデス中に参加した場合はその局は見学（次から参加）
+      done: game.phase === 'playing' || game.phase === 'suddenDeath',
     });
     addLog(`＋ ${name} が参加しました`);
     broadcast();
@@ -196,7 +275,7 @@ io.on('connection', (socket) => {
   socket.on('ready', (isReady) => {
     const p = findPlayer(socket.id);
     if (!p) return;
-    if (game.phase === 'playing') return;
+    if (game.phase !== 'lobby' && game.phase !== 'roundEnd') return;
     p.ready = !!isReady;
     maybeStart();
     broadcast();
@@ -204,7 +283,7 @@ io.on('connection', (socket) => {
 
   socket.on('setMode', (mode) => {
     if (!findPlayer(socket.id)) return;
-    if (game.phase === 'playing') return; // 対局中は変更不可
+    if (game.phase !== 'lobby' && game.phase !== 'roundEnd') return; // 対局中・SD中は変更不可
     if (!C.Modes[mode] || mode === game.mode) return;
     game.mode = mode;
     addLog(`⚙ モードを「${C.Modes[mode].label}」に変更`);
@@ -212,11 +291,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('roll', () => {
-    if (game.phase !== 'playing') return;
+    if (game.phase !== 'playing' && game.phase !== 'suddenDeath') return;
     const cur = game.players[game.turn];
     if (!cur || cur.id !== socket.id || cur.done) return;
 
-    const maxRolls = modeConf().rolls;
+    // サドンデスは一振り固定。通常はモードの振り直し回数。
+    const maxRolls = game.phase === 'suddenDeath' ? 1 : modeConf().rolls;
     cur.dice = C.rollDice(modeConf().dice);
     cur.rolls += 1;
     cur.result = C.judgeHand(cur.dice);
@@ -225,7 +305,7 @@ io.on('connection', (socket) => {
     if (cur.result.yaku !== C.Yaku.MENASHI || cur.rolls >= maxRolls) {
       cur.done = true;
       const tail =
-        cur.result.yaku === C.Yaku.MENASHI ? '役なし（ションベン）' : info.label;
+        cur.result.yaku === C.Yaku.MENASHI ? '役なし' : info.label;
       addLog(`🎲 ${cur.name}：${cur.dice.join('・')} → ${tail}${pointLabel(cur.result)}`);
       advanceTurn();
     } else {
@@ -245,10 +325,10 @@ io.on('connection', (socket) => {
       broadcast();
       return;
     }
-    if (game.phase === 'playing') {
+    if (game.phase === 'playing' || game.phase === 'suddenDeath') {
       if (game.turn >= game.players.length) game.turn = 0;
       if (game.players.every((p) => p.done)) {
-        endRound();
+        resolvePhase();
       } else if (game.players[game.turn].done) {
         advanceTurn();
       }

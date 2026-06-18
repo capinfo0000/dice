@@ -125,10 +125,12 @@ function myPlayer() {
   if (!state) return null;
   return state.players.find((p) => p.id === myId) || null;
 }
+function isRollPhase() {
+  return state && (state.phase === 'playing' || state.phase === 'suddenDeath');
+}
 function isMyTurn() {
   return (
-    state &&
-    state.phase === 'playing' &&
+    isRollPhase() &&
     state.players[state.turn] &&
     state.players[state.turn].id === myId
   );
@@ -198,12 +200,22 @@ function renderDrink() {
   }
   if (r.draw) {
     b.classList.remove('hidden');
-    b.innerHTML = '<div class="dr-draw">🤝 引き分け！ 飲みなし</div>';
+    b.innerHTML = '<div class="dr-draw">🤝 引き分け</div>';
     return;
   }
   b.classList.remove('hidden');
+  let topLine;
+  if (r.winnerNames && r.winnerNames.length) {
+    topLine = `🏆 ${escapeHTML(r.winnerNames.join('・'))}　${escapeHTML(r.yakuLabel)}`;
+  } else {
+    topLine = `全員 ${escapeHTML(r.yakuLabel)} で同点！`;
+  }
+  const sdTag = r.suddenDeath
+    ? '<div class="dr-sd">⚔ サドンデスで決定！</div>'
+    : '';
   b.innerHTML = `
-    <div class="dr-win">🏆 ${escapeHTML(r.winnerNames.join('・'))}　${escapeHTML(r.yakuLabel)}</div>
+    <div class="dr-win">${topLine}</div>
+    ${sdTag}
     <div class="dr-drink">🍺 ${escapeHTML(r.loserNames.join('・'))}</div>
     <div class="dr-gulps">${r.gulps} 杯 飲む！</div>`;
 }
@@ -248,8 +260,12 @@ function renderBanner() {
     const cur = state.players[state.turn];
     if (cur && cur.id === myId) b.textContent = '👉 あなたの番！ お皿をタップして振る';
     else b.textContent = cur ? `${cur.name} さんが振っています…` : '';
+  } else if (state.phase === 'suddenDeath') {
+    const cur = state.players[state.turn];
+    if (cur && cur.id === myId) b.textContent = '⚔ サドンデス！ お皿をタップして一振り';
+    else b.textContent = cur ? `⚔ サドンデス：${cur.name} さんが一振り…` : '⚔ サドンデス';
   } else if (state.phase === 'roundEnd') {
-    b.textContent = 'ラウンド終了！　準備OKで次の局へ';
+    b.textContent = '局終了！　準備OKで次の局へ';
   }
 }
 
@@ -279,16 +295,15 @@ function reconcilePlayers() {
     card.name.innerHTML = escapeHTML(p.name) + badgeHTML(p);
     card.score.textContent = `${p.score}点`;
 
+    const sd = state.suddenDeathIds && state.suddenDeathIds.includes(p.id);
     card.root.classList.toggle('me', p.id === myId);
-    card.root.classList.toggle(
-      'turn',
-      state.phase === 'playing' && idx === state.turn
-    );
+    card.root.classList.toggle('turn', isRollPhase() && idx === state.turn);
     card.root.classList.toggle('winner', outcome.winnerIds.includes(p.id));
     card.root.classList.toggle('loser', outcome.loserIds.includes(p.id));
+    card.root.classList.toggle('sd', !!sd);
 
     // お皿のタップ可否（自分の番のときだけ）
-    const tappable = state.phase === 'playing' && idx === state.turn && p.id === myId;
+    const tappable = isRollPhase() && idx === state.turn && p.id === myId;
     card.bowl.classList.toggle('tappable', tappable && !animating[p.id]);
 
     updateDice(p);
@@ -366,7 +381,7 @@ function updateDice(p) {
   }
   shownDice[p.id] = tj;
 
-  if (state.phase === 'playing') {
+  if (isRollPhase()) {
     animateRoll(p);
   } else {
     // 途中参加や再接続：即座に確定表示
@@ -431,8 +446,7 @@ function animateRoll(p) {
     if (p.id === myId) myRollLock = false;
     if (state) {
       const idx = state.players.findIndex((x) => x.id === p.id);
-      const tappable =
-        state.phase === 'playing' && idx === state.turn && p.id === myId;
+      const tappable = isRollPhase() && idx === state.turn && p.id === myId;
       card.bowl.classList.toggle('tappable', tappable);
     }
   }, settleAt + 320);
@@ -467,7 +481,8 @@ function renderControls(me) {
   const readyBtn = el('readyBtn');
 
   rollBtn.disabled = !isMyTurn() || myRollLock;
-  rollBtn.classList.toggle('hidden', state.phase !== 'playing');
+  rollBtn.textContent = state.phase === 'suddenDeath' ? '⚔ 一振り' : '🎲 振る';
+  rollBtn.classList.toggle('hidden', !isRollPhase());
 
   const canReady = state.phase === 'lobby' || state.phase === 'roundEnd';
   readyBtn.classList.toggle('hidden', !canReady);
