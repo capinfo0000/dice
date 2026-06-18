@@ -1,10 +1,14 @@
 // チンチロ クライアント
+// 深いお皿（鉢）にサイコロが落ちて転がり、1つずつ止まる演出付き。
 const socket = io();
 
 let myId = null;
 let state = null;
-let joined = false;
-const prevDice = {}; // プレイヤーごとの前回出目（アニメーション判定用）
+let myRollLock = false; // 自分の振り直し操作の二重送信防止
+
+const cards = {}; // id -> { root, name, score, badge, bowl, dice:[3], result }
+const shownDice = {}; // id -> 現在表示中（またはアニメ目標）の出目JSON
+const animating = {}; // id -> アニメーション中フラグ
 
 const YAKU_LABEL = {
   pinzoro: 'ピンゾロ',
@@ -27,6 +31,59 @@ const PIP_CELLS = {
 
 const el = (id) => document.getElementById(id);
 
+/* ============ 効果音（Web Audio APIで合成。音声ファイル不要） ============ */
+let audioCtx = null;
+function ac() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  return audioCtx;
+}
+function resumeAudio() {
+  const ctx = ac();
+  if (ctx && ctx.state === 'suspended') ctx.resume();
+}
+// サイコロがお皿に当たる「カチッ」という音（フィルタしたノイズバースト）
+function playClack(volume = 0.35, freq = 1500) {
+  const ctx = ac();
+  if (!ctx) return;
+  const dur = 0.07;
+  const len = Math.floor(ctx.sampleRate * dur);
+  const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < len; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = freq + Math.random() * 600;
+  bp.Q.value = 1.1;
+  const g = ctx.createGain();
+  g.gain.value = volume;
+  src.connect(bp).connect(g).connect(ctx.destination);
+  src.start();
+}
+// お皿に落ちる「コトッ」という低めの音
+function playDrop() {
+  const ctx = ac();
+  if (!ctx) return;
+  playClack(0.4, 600);
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(220, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.12);
+  g.gain.setValueAtTime(0.25, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+  osc.connect(g).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.2);
+}
+
+/* ============ ソケット ============ */
 socket.on('connect', () => {
   myId = socket.id;
 });
@@ -35,49 +92,85 @@ socket.on('state', (s) => {
   render();
 });
 
+/* ============ 入力 ============ */
 el('joinBtn').onclick = () => {
+  resumeAudio();
   socket.emit('join', el('nameInput').value);
-  joined = true;
 };
 el('nameInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') el('joinBtn').click();
 });
-el('rollBtn').onclick = () => socket.emit('roll');
+el('rollBtn').onclick = () => tryRoll();
 el('readyBtn').onclick = () => {
+  resumeAudio();
   const me = myPlayer();
   socket.emit('ready', !(me && me.ready));
 };
+document.querySelectorAll('.mode-btn').forEach((btn) => {
+  btn.onclick = () => {
+    resumeAudio();
+    socket.emit('setMode', btn.dataset.mode);
+  };
+});
+
+function tryRoll() {
+  if (myRollLock) return;
+  if (!isMyTurn()) return;
+  resumeAudio();
+  myRollLock = true;
+  socket.emit('roll');
+}
 
 function myPlayer() {
   if (!state) return null;
   return state.players.find((p) => p.id === myId) || null;
 }
+function isMyTurn() {
+  return (
+    state &&
+    state.phase === 'playing' &&
+    state.players[state.turn] &&
+    state.players[state.turn].id === myId
+  );
+}
 
-function dieHTML(value, rolling) {
-  if (!value) return '<div class="die empty"></div>';
+/* ============ サイコロ描画 ============ */
+function buildDie() {
+  const d = document.createElement('div');
+  d.className = 'die empty';
+  for (let c = 0; c < 9; c++) d.appendChild(document.createElement('span'));
+  return d;
+}
+function setFace(dieEl, value) {
   const cells = PIP_CELLS[value] || [];
-  let inner = '';
+  dieEl.classList.toggle('empty', !value);
+  const spans = dieEl.children;
   for (let c = 1; c <= 9; c++) {
-    inner += cells.includes(c) ? '<span class="pip"></span>' : '<span></span>';
+    spans[c - 1].className = value && cells.includes(c) ? 'pip' : '';
   }
-  return `<div class="die${rolling ? ' rolling' : ''}">${inner}</div>`;
+}
+function rnd(min, max) {
+  return min + Math.random() * (max - min);
+}
+// お皿の中のサイコロ数をモードに合わせて増減
+function ensureDiceCount(card, n) {
+  while (card.dice.length < n) {
+    const d = buildDie();
+    card.bowl.appendChild(d);
+    card.dice.push(d);
+  }
+  while (card.dice.length > n) {
+    const d = card.dice.pop();
+    d.remove();
+  }
 }
 
-function resultText(result) {
-  if (!result) return '';
-  const label = YAKU_LABEL[result.yaku] || '';
-  if (result.yaku === 'me') return `${label}（${result.point}の目）`;
-  if (result.yaku === 'arashi') return `${label}（${result.point}ゾロ）`;
-  return label;
-}
-
+/* ============ メイン描画 ============ */
 function render() {
   if (!state) return;
-
   const me = myPlayer();
   const amJoined = !!me;
 
-  // 画面切り替え
   el('joinScreen').classList.toggle('hidden', amJoined);
   el('gameScreen').classList.toggle('hidden', !amJoined);
 
@@ -86,10 +179,24 @@ function render() {
     return;
   }
 
-  renderBanner(me);
-  renderPlayers(me);
+  renderRoundInfo();
+  renderBanner();
+  renderMode();
+  reconcilePlayers();
   renderControls(me);
   renderLog();
+}
+
+function renderMode() {
+  const canChange = state.phase === 'lobby' || state.phase === 'roundEnd';
+  document.querySelectorAll('.mode-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.mode === state.mode);
+    btn.disabled = !canChange;
+  });
+  el('modeNote').textContent =
+    state.mode === '4'
+      ? '4チロ：サイコロ4個を1回だけ振り、最強の3個で役を判定'
+      : '3チロ：サイコロ3個、役なしなら最大3回まで振り直し';
 }
 
 function renderLobbyList() {
@@ -108,86 +215,240 @@ function renderLobbyList() {
   });
 }
 
-function renderBanner(me) {
+function renderRoundInfo() {
+  el('roundInfo').textContent = state.round > 0 ? `第 ${state.round} 局` : '';
+}
+
+function renderBanner() {
   const b = el('phaseBanner');
   if (state.phase === 'lobby') {
     b.textContent = '準備OKを押すと開始（2人以上・全員がOKで開始）';
   } else if (state.phase === 'playing') {
     const cur = state.players[state.turn];
-    if (cur && cur.id === myId) b.textContent = '👉 あなたの番です。振ってください！';
+    if (cur && cur.id === myId) b.textContent = '👉 あなたの番！ お皿をタップして振る';
     else b.textContent = cur ? `${cur.name} さんが振っています…` : '';
   } else if (state.phase === 'roundEnd') {
-    b.textContent = 'ラウンド終了！　準備OKで次のラウンドへ';
+    b.textContent = 'ラウンド終了！　準備OKで次の局へ';
   }
 }
 
-function renderPlayers(me) {
+/** プレイヤーカードをキー付きで再利用しながら更新（アニメーションを壊さない） */
+function reconcilePlayers() {
   const wrap = el('players');
-  wrap.innerHTML = '';
+  const ids = new Set(state.players.map((p) => p.id));
 
-  // 勝者判定（roundEnd時の強調用）
+  // いなくなったプレイヤーのカードを削除
+  Object.keys(cards).forEach((id) => {
+    if (!ids.has(id)) {
+      cards[id].root.remove();
+      delete cards[id];
+      delete shownDice[id];
+      delete animating[id];
+    }
+  });
+
   let winnerIds = [];
   if (state.phase === 'roundEnd') winnerIds = computeWinners();
 
   state.players.forEach((p, idx) => {
-    const div = document.createElement('div');
-    div.className = 'player';
-    if (p.id === myId) div.classList.add('me');
-    if (state.phase === 'playing' && idx === state.turn) div.classList.add('turn');
-    if (winnerIds.includes(p.id)) div.classList.add('winner');
+    const card = getOrCreateCard(p.id);
+    wrap.appendChild(card.root); // 順序を維持
+    if (!animating[p.id]) ensureDiceCount(card, state.diceCount);
 
-    let badge = '';
-    if (state.phase === 'lobby' || state.phase === 'roundEnd') {
-      badge = p.ready
-        ? '<span class="badge ready">準備OK</span>'
-        : '<span class="badge wait">待機</span>';
-    } else if (p.done && p.result) {
-      badge = '<span class="badge ready">確定</span>';
-    }
+    card.name.innerHTML = escapeHTML(p.name) + badgeHTML(p);
+    card.score.textContent = `${p.score}点`;
 
-    // サイコロ表示（出目が変わったらアニメーション）
-    const dice = p.dice || [null, null, null];
-    const changed =
-      p.dice && prevDice[p.id] !== JSON.stringify(p.dice) && state.phase === 'playing';
-    const diceHTML = dice.map((d) => dieHTML(d, changed)).join('');
-    if (p.dice) prevDice[p.id] = JSON.stringify(p.dice);
+    card.root.classList.toggle('me', p.id === myId);
+    card.root.classList.toggle(
+      'turn',
+      state.phase === 'playing' && idx === state.turn
+    );
+    card.root.classList.toggle('winner', winnerIds.includes(p.id));
 
-    // 役テキスト
-    let rline = '';
-    if (p.result && (p.done || state.phase === 'roundEnd')) {
-      const cls = p.result.yaku === 'hifumi' || p.result.yaku === 'menashi' ? 'lose' : 'win';
-      rline = `<div class="result-line ${cls}">${resultText(p.result)}</div>`;
-    } else if (p.result) {
-      rline = '<div class="result-line">…振り直し中</div>';
-    } else {
-      rline = '<div class="result-line">　</div>';
-    }
+    // お皿のタップ可否（自分の番のときだけ）
+    const tappable = state.phase === 'playing' && idx === state.turn && p.id === myId;
+    card.bowl.classList.toggle('tappable', tappable && !animating[p.id]);
 
-    div.innerHTML = `
-      <div class="phead">
-        <span class="pname">${escapeHTML(p.name)}${badge}</span>
-        <span class="pscore">${p.score}点</span>
-      </div>
-      <div class="dice-row">${diceHTML}</div>
-      ${rline}`;
-    wrap.appendChild(div);
+    updateDice(p);
   });
+}
+
+function badgeHTML(p) {
+  if (state.phase === 'lobby' || state.phase === 'roundEnd') {
+    return p.ready
+      ? '<span class="badge ready">準備OK</span>'
+      : '<span class="badge wait">待機</span>';
+  }
+  if (p.done && p.result) return '<span class="badge ready">確定</span>';
+  return '';
+}
+
+function getOrCreateCard(id) {
+  if (cards[id]) return cards[id];
+
+  const root = document.createElement('div');
+  root.className = 'player';
+
+  const phead = document.createElement('div');
+  phead.className = 'phead';
+  const name = document.createElement('span');
+  name.className = 'pname';
+  const score = document.createElement('span');
+  score.className = 'pscore';
+  phead.append(name, score);
+
+  const bowl = document.createElement('div');
+  bowl.className = 'bowl';
+  const count = (state && state.diceCount) || 3;
+  const dice = [];
+  for (let i = 0; i < count; i++) {
+    const d = buildDie();
+    dice.push(d);
+    bowl.appendChild(d);
+  }
+  bowl.addEventListener('click', () => {
+    if (bowl.classList.contains('tappable')) tryRoll();
+  });
+
+  const result = document.createElement('div');
+  result.className = 'result-line';
+  result.innerHTML = '&nbsp;';
+
+  root.append(phead, bowl, result);
+  cards[id] = { root, name, score, bowl, dice, result };
+  return cards[id];
+}
+
+function updateDice(p) {
+  const card = cards[p.id];
+  const target = p.dice;
+
+  if (!target) {
+    // 出目なし（新しい局・ロビー）→ お皿を空に
+    if (!animating[p.id]) {
+      card.dice.forEach((d) => {
+        d.style.transition = 'none';
+        d.style.transform = '';
+        setFace(d, null);
+      });
+      card.result.innerHTML = '&nbsp;';
+    }
+    delete shownDice[p.id];
+    return;
+  }
+
+  const tj = JSON.stringify(target);
+  if (shownDice[p.id] === tj) {
+    if (!animating[p.id]) showResult(p);
+    return;
+  }
+  shownDice[p.id] = tj;
+
+  if (state.phase === 'playing') {
+    animateRoll(p);
+  } else {
+    // 途中参加や再接続：即座に確定表示
+    card.dice.forEach((d, i) => setFace(d, target[i]));
+    showResult(p);
+  }
+}
+
+/** サイコロが落ちて → 転がって → 一斉に止まる演出 */
+function animateRoll(p) {
+  const card = cards[p.id];
+  ensureDiceCount(card, p.dice.length);
+  const dice = card.dice;
+  const target = p.dice;
+  animating[p.id] = true;
+  card.bowl.classList.remove('tappable');
+  card.result.innerHTML = '<span class="rolling-msg">…</span>';
+
+  // 落下
+  dice.forEach((d) => {
+    d.style.transition = 'none';
+    d.style.transform = `translateY(-160px) rotate(${rnd(-220, 220)}deg)`;
+    setFace(d, Math.ceil(rnd(0.001, 6)));
+  });
+  void card.bowl.offsetWidth; // リフロー
+  dice.forEach((d, i) => {
+    d.style.transition = 'transform .38s cubic-bezier(.3,1.5,.6,1)';
+    d.style.transform = `translateY(0) rotate(${rnd(-20, 20)}deg)`;
+    setTimeout(() => playDrop(), 230 + i * 25);
+  });
+
+  // 転がり（落下後）
+  const tumble = setInterval(() => {
+    dice.forEach((d) => {
+      d.style.transition = 'transform .07s linear';
+      d.style.transform = `translateY(${rnd(-6, 4)}px) rotate(${rnd(-30, 30)}deg)`;
+      setFace(d, Math.ceil(rnd(0.001, 6)));
+    });
+  }, 80);
+  const rollSfx = setInterval(() => playClack(0.12, 2200), 130);
+
+  // 一斉に止まる
+  const settleAt = 1100;
+  setTimeout(() => {
+    clearInterval(tumble);
+    clearInterval(rollSfx);
+    dice.forEach((d, i) => {
+      d.style.transition = 'transform .2s ease-out';
+      d.style.transform = `translateY(0) rotate(${rnd(-8, 8)}deg)`;
+      setFace(d, target[i]);
+      d.classList.add('settle-pop');
+      setTimeout(() => d.classList.remove('settle-pop'), 200);
+    });
+    playClack(0.45, 1100); // 一斉に「カチッ」
+    setTimeout(() => playClack(0.3, 1600), 45);
+  }, settleAt);
+
+  // 止まったら役を表示
+  setTimeout(() => {
+    animating[p.id] = false;
+    showResult(p);
+    if (p.id === myId) myRollLock = false;
+    if (state) {
+      const idx = state.players.findIndex((x) => x.id === p.id);
+      const tappable =
+        state.phase === 'playing' && idx === state.turn && p.id === myId;
+      card.bowl.classList.toggle('tappable', tappable);
+    }
+  }, settleAt + 320);
+}
+
+function showResult(p) {
+  const card = cards[p.id];
+  if (!p.result) {
+    card.result.innerHTML = '&nbsp;';
+    return;
+  }
+  const done = p.done || state.phase === 'roundEnd';
+  if (!done && p.result.yaku === 'menashi') {
+    card.result.className = 'result-line lose';
+    card.result.textContent = '役なし（振り直し）';
+    return;
+  }
+  const lose = p.result.yaku === 'hifumi' || p.result.yaku === 'menashi';
+  card.result.className = 'result-line ' + (lose ? 'lose' : 'win');
+  card.result.textContent = resultText(p.result);
+}
+
+function resultText(result) {
+  const label = YAKU_LABEL[result.yaku] || '';
+  if (result.yaku === 'me') return `${label}（${result.point}の目）`;
+  if (result.yaku === 'arashi') return `${label}（${result.point}ゾロ）`;
+  return label;
 }
 
 function renderControls(me) {
   const rollBtn = el('rollBtn');
   const readyBtn = el('readyBtn');
 
-  const myTurn =
-    state.phase === 'playing' &&
-    state.players[state.turn] &&
-    state.players[state.turn].id === myId;
-  rollBtn.disabled = !myTurn;
+  rollBtn.disabled = !isMyTurn() || myRollLock;
+  rollBtn.classList.toggle('hidden', state.phase !== 'playing');
 
   const canReady = state.phase === 'lobby' || state.phase === 'roundEnd';
   readyBtn.classList.toggle('hidden', !canReady);
-  rollBtn.classList.toggle('hidden', !(state.phase === 'playing'));
-
   if (canReady) {
     readyBtn.textContent = me.ready ? '準備OK ✓（解除）' : '準備OK';
     readyBtn.classList.toggle('ready-on', me.ready);
@@ -205,7 +466,7 @@ function renderLog() {
   ul.scrollTop = ul.scrollHeight;
 }
 
-// サーバーと同じ勝敗ロジック（表示の強調用）
+/* ============ 勝敗判定（表示の強調用。サーバーと同ロジック） ============ */
 const RANK = { pinzoro: 7, arashi: 6, shigoro: 5, me: 4, menashi: 1, hifumi: 0 };
 const LOSE = { hifumi: true };
 function cmp(a, b) {
@@ -228,7 +489,7 @@ function computeWinners() {
       winners = [c[i]];
     } else if (r === 0) winners.push(c[i]);
   }
-  if (LOSE[best.result.yaku] || winners.length > 1) return []; // 引き分けは強調なし
+  if (LOSE[best.result.yaku] || winners.length > 1) return [];
   return winners.map((w) => w.id);
 }
 

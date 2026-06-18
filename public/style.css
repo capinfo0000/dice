@@ -125,6 +125,16 @@ body {
   justify-content: space-between;
 }
 
+.round-info {
+  text-align: center;
+  color: var(--gold);
+  font-weight: bold;
+  letter-spacing: 0.15em;
+  margin-bottom: 2px;
+  min-height: 1.2em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
 .phase-banner {
   text-align: center;
   color: #fff;
@@ -133,6 +143,40 @@ body {
   margin-bottom: 14px;
   min-height: 1.4em;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* モード選択 */
+.mode-select {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 10px 0 4px;
+}
+.mode-btn {
+  border: 2px solid #cfd8d2;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-weight: bold;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+.mode-btn.active {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+.mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mode-note {
+  text-align: center;
+  color: #fff;
+  font-size: 0.82rem;
+  margin: 2px 0 10px;
+  opacity: 0.9;
 }
 
 .players {
@@ -193,51 +237,108 @@ body {
   color: #667;
 }
 
-.dice-row {
+/* 深いお皿（鉢） */
+.bowl {
+  position: relative;
+  width: 100%;
+  max-width: 230px;
+  margin: 4px auto 8px;
+  aspect-ratio: 1.7 / 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 50% 34%,
+    #ffffff 0%,
+    #f1efe6 38%,
+    #d8d4c4 68%,
+    #b3ae9b 100%
+  );
+  box-shadow: inset 0 14px 26px rgba(0, 0, 0, 0.4),
+    inset 0 -8px 12px rgba(255, 255, 255, 0.55),
+    inset 0 0 0 6px rgba(0, 0, 0, 0.04), 0 6px 14px rgba(0, 0, 0, 0.35);
   display: flex;
-  gap: 8px;
+  align-items: center;
   justify-content: center;
-  min-height: 52px;
-  margin: 6px 0;
+  gap: 9px;
+  overflow: hidden;
+}
+.bowl.tappable {
+  cursor: pointer;
+  box-shadow: inset 0 14px 26px rgba(0, 0, 0, 0.4),
+    inset 0 -8px 12px rgba(255, 255, 255, 0.55),
+    0 0 0 3px var(--gold), 0 0 18px rgba(244, 196, 48, 0.7);
+  animation: bowlPulse 1.3s ease-in-out infinite;
+}
+.bowl.tappable::after {
+  content: 'タップで振る';
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: #7a5a00;
+  pointer-events: none;
+}
+@keyframes bowlPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
 }
 
 .die {
-  width: 46px;
-  height: 46px;
-  background: #fdfdf7;
+  width: 42px;
+  height: 42px;
+  background: linear-gradient(145deg, #ffffff, #f0eee4);
   border-radius: 10px;
-  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.12), 0 2px 5px rgba(0, 0, 0, 0.35);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   padding: 6px;
+  will-change: transform;
 }
-.die .pip {
-  width: 8px;
-  height: 8px;
-  background: #222;
-  border-radius: 50%;
+.die span {
+  width: 7px;
+  height: 7px;
   align-self: center;
   justify-self: center;
 }
-.die.rolling {
-  animation: shake 0.4s ease;
+.die .pip {
+  background: #c0392b;
+  border-radius: 50%;
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.3);
 }
-@keyframes shake {
-  0%,
+.die.settle-pop {
+  animation: settlePop 0.2s ease-out;
+}
+@keyframes settlePop {
+  0% {
+    filter: brightness(1.4);
+  }
   100% {
-    transform: rotate(0) translateY(0);
-  }
-  25% {
-    transform: rotate(-12deg) translateY(-4px);
-  }
-  75% {
-    transform: rotate(12deg) translateY(-4px);
+    filter: brightness(1);
   }
 }
 .die.empty {
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.25);
   box-shadow: none;
+}
+.die.empty .pip {
+  background: transparent;
+}
+.rolling-msg {
+  letter-spacing: 0.3em;
+  animation: blink 0.6s steps(1) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0.3;
+  }
 }
 
 .result-line {

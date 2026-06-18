@@ -33,10 +33,21 @@
     return Math.floor(Math.random() * 6) + 1;
   }
 
-  /** サイコロを3つ振る */
-  function rollDice() {
-    return [rollDie(), rollDie(), rollDie()];
+  /** サイコロを count 個振る（既定3個） */
+  function rollDice(count = 3) {
+    const out = [];
+    for (let i = 0; i < count; i++) out.push(rollDie());
+    return out;
   }
+
+  /**
+   * ゲームモード定義。
+   * 3チロ：3個・最大3振り。4チロ：4個・1振り（最強の3個で判定）。
+   */
+  const Modes = {
+    '3': { dice: 3, rolls: 3, label: '3チロ（3個・3振り）' },
+    '4': { dice: 4, rolls: 1, label: '4チロ（4個・1振り）' },
+  };
 
   /**
    * 3つの出目から役を判定する。
@@ -62,6 +73,33 @@
     if (b === c) return { yaku: Yaku.ME, point: a };
 
     return { yaku: Yaku.MENASHI, point: 0 };
+  }
+
+  /** 配列から3個を選ぶ全組み合わせを返す */
+  function combos3(arr) {
+    const res = [];
+    for (let i = 0; i < arr.length - 2; i++) {
+      for (let j = i + 1; j < arr.length - 1; j++) {
+        for (let k = j + 1; k < arr.length; k++) {
+          res.push([arr[i], arr[j], arr[k]]);
+        }
+      }
+    }
+    return res;
+  }
+
+  /**
+   * 任意個数（3個以上）のサイコロから役を判定する。
+   * 4個以上のときは、最も強くなる3個の組み合わせの役を採用する。
+   */
+  function judgeHand(dice) {
+    if (!dice || dice.length <= 3) return judge(dice);
+    let best = null;
+    for (const c of combos3(dice)) {
+      const r = judge(c);
+      if (!best || compare(r, best) > 0) best = r;
+    }
+    return best;
   }
 
   /**
@@ -106,5 +144,5 @@
     return -bet * m;
   }
 
-  return { Yaku, YakuInfo, rollDie, rollDice, judge, compare, settle };
+  return { Yaku, YakuInfo, Modes, rollDie, rollDice, judge, judgeHand, compare, settle };
 });

@@ -14,15 +14,20 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const MAX_ROLLS = 3; // 役なしのとき振り直せる上限回数
 
 /** ゲーム状態（テーブルは1つだけ） */
 const game = {
   phase: 'lobby', // 'lobby' | 'playing' | 'roundEnd'
   players: [], // {id, name, ready, score, dice, result, rolls, done}
   turn: 0, // game.players のインデックス
+  round: 0, // 何局目か
+  mode: '3', // '3'=3チロ（3個3振り） / '4'=4チロ（4個1振り）
   log: [],
 };
+
+function modeConf() {
+  return C.Modes[game.mode] || C.Modes['3'];
+}
 
 function findPlayer(id) {
   return game.players.find((p) => p.id === id);
@@ -44,6 +49,10 @@ function publicState() {
   return {
     phase: game.phase,
     turn: game.turn,
+    round: game.round,
+    mode: game.mode,
+    diceCount: modeConf().dice,
+    maxRolls: modeConf().rolls,
     players: game.players.map((p) => ({
       id: p.id,
       name: p.name,
@@ -78,6 +87,7 @@ function advanceTurn() {
 function startRound() {
   game.phase = 'playing';
   game.turn = 0;
+  game.round += 1;
   game.players.forEach((p) => {
     p.dice = null;
     p.result = null;
@@ -85,7 +95,7 @@ function startRound() {
     p.done = false;
     p.ready = false;
   });
-  addLog('▶ 新しいラウンド開始！');
+  addLog(`▶ 第${game.round}局 開始！`);
 }
 
 /** ロビー／ラウンド終了後、2人以上が全員準備OKなら開始 */
@@ -140,6 +150,8 @@ function resetGame() {
   game.phase = 'lobby';
   game.players = [];
   game.turn = 0;
+  game.round = 0;
+  game.mode = '3';
   game.log = [];
 }
 
@@ -175,24 +187,34 @@ io.on('connection', (socket) => {
     broadcast();
   });
 
+  socket.on('setMode', (mode) => {
+    if (!findPlayer(socket.id)) return;
+    if (game.phase === 'playing') return; // 対局中は変更不可
+    if (!C.Modes[mode] || mode === game.mode) return;
+    game.mode = mode;
+    addLog(`⚙ モードを「${C.Modes[mode].label}」に変更`);
+    broadcast();
+  });
+
   socket.on('roll', () => {
     if (game.phase !== 'playing') return;
     const cur = game.players[game.turn];
     if (!cur || cur.id !== socket.id || cur.done) return;
 
-    cur.dice = C.rollDice();
+    const maxRolls = modeConf().rolls;
+    cur.dice = C.rollDice(modeConf().dice);
     cur.rolls += 1;
-    cur.result = C.judge(cur.dice);
+    cur.result = C.judgeHand(cur.dice);
     const info = C.YakuInfo[cur.result.yaku];
 
-    if (cur.result.yaku !== C.Yaku.MENASHI || cur.rolls >= MAX_ROLLS) {
+    if (cur.result.yaku !== C.Yaku.MENASHI || cur.rolls >= maxRolls) {
       cur.done = true;
       const tail =
         cur.result.yaku === C.Yaku.MENASHI ? '役なし（ションベン）' : info.label;
       addLog(`🎲 ${cur.name}：${cur.dice.join('・')} → ${tail}${pointLabel(cur.result)}`);
       advanceTurn();
     } else {
-      addLog(`🎲 ${cur.name}：${cur.dice.join('・')} → 役なし（振り直し ${cur.rolls}/${MAX_ROLLS}）`);
+      addLog(`🎲 ${cur.name}：${cur.dice.join('・')} → 役なし（振り直し ${cur.rolls}/${maxRolls}）`);
     }
     broadcast();
   });

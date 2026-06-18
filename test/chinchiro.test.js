@@ -34,4 +34,24 @@ assert.strictEqual(C.settle(C.judge([2, 2, 5]), C.judge([1, 2, 3]), 100), 200, '
 assert.strictEqual(C.settle(C.judge([1, 2, 3]), C.judge([2, 2, 5]), 100), -200, '自分ヒフミで×2負け');
 assert.strictEqual(C.settle(C.judge([5, 5, 1]), C.judge([5, 5, 6]), 100), -100, '出目負けで-100');
 
+// --- モード定義 ---
+assert.strictEqual(C.Modes['3'].dice, 3, '3チロは3個');
+assert.strictEqual(C.Modes['3'].rolls, 3, '3チロは3振り');
+assert.strictEqual(C.Modes['4'].dice, 4, '4チロは4個');
+assert.strictEqual(C.Modes['4'].rolls, 1, '4チロは1振り');
+
+// --- 4個判定（最強の3個で判定）---
+assert.strictEqual(C.judgeHand([1, 1, 1, 4]).yaku, C.Yaku.PINZORO, '4個でピンゾロ採用');
+assert.strictEqual(C.judgeHand([2, 3, 4, 4]).yaku, C.Yaku.ME, '4個で出目採用');
+assert.strictEqual(C.judgeHand([2, 3, 4, 4]).point, 3, '出目=3（4-4ペア＋3）');
+assert.strictEqual(C.judgeHand([4, 5, 6, 1]).yaku, C.Yaku.SHIGORO, '4個でシゴロ採用');
+// ヒフミになる3個があっても、別の3個（役なし）の方が強いので役なしを採用
+assert.strictEqual(C.judgeHand([1, 2, 3, 5]).yaku, C.Yaku.MENASHI, '4個ならヒフミを回避');
+// 3個ならこれまで通り
+assert.strictEqual(C.judgeHand([1, 1, 1]).yaku, C.Yaku.PINZORO, '3個はjudgeと同じ');
+
+// rollDice の個数指定
+assert.strictEqual(C.rollDice(4).length, 4, 'rollDice(4)で4個');
+assert.strictEqual(C.rollDice().length, 3, 'rollDice()既定3個');
+
 console.log('✅ 全テスト通過');
