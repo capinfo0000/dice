@@ -2,80 +2,51 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>チンチロ オンライン対戦</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>チンチロ</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <div class="app">
       <header class="topbar">
-        <h1>🎲 チンチロ</h1>
-        <p class="subtitle">親・子なし　一番強い役が勝ち</p>
+        <span class="title">🎲 チンチロ</span>
+        <button id="modeBtn" class="icon-btn" title="モード切替">3チロ</button>
       </header>
 
-      <!-- 参加フォーム -->
-      <section id="joinScreen" class="screen">
-        <div class="card join-card">
-          <h2>テーブルに参加</h2>
-          <p class="hint">
-            同じ端末でも、ブラウザのタブを増やせば人数分のプレイヤーで対戦できます。
-          </p>
-          <input
-            id="nameInput"
-            type="text"
-            maxlength="12"
-            placeholder="名前を入力（12文字まで）"
-            autocomplete="off"
-          />
-          <button id="joinBtn" class="btn primary">参加する</button>
-          <ul id="lobbyList" class="lobby-list"></ul>
+      <!-- 結果タイトル -->
+      <div id="resultTitle" class="result-title">　</div>
+
+      <!-- 振り直しドット -->
+      <div id="rollDots" class="roll-dots"></div>
+
+      <!-- 鉢 -->
+      <div id="bowl" class="bowl">
+        <div id="diceWrap" class="dice-wrap"></div>
+      </div>
+
+      <!-- メインボタン -->
+      <div class="action">
+        <button id="actionBtn" class="action-btn">サイコロを振る</button>
+      </div>
+
+      <!-- プレイヤータブ -->
+      <div id="players" class="players"></div>
+
+      <!-- 結果（飲み）オーバーレイ -->
+      <div id="overlay" class="overlay hidden">
+        <div class="overlay-card">
+          <div id="ovWinner" class="ov-winner"></div>
+          <div id="ovSd" class="ov-sd"></div>
+          <div class="ov-drink">🍺</div>
+          <div id="ovLoser" class="ov-loser"></div>
+          <div id="ovGulps" class="ov-gulps"></div>
+          <ul id="ovList" class="ov-list"></ul>
+          <button id="againBtn" class="action-btn">もう一局</button>
         </div>
-      </section>
-
-      <!-- ゲーム画面 -->
-      <section id="gameScreen" class="screen hidden">
-        <div id="roundInfo" class="round-info"></div>
-        <div id="phaseBanner" class="phase-banner"></div>
-
-        <div id="modeSelect" class="mode-select">
-          <button class="mode-btn" data-mode="3">3チロ（3個・3振り）</button>
-          <button class="mode-btn" data-mode="4">4チロ（4個・1振り）</button>
-        </div>
-        <div id="modeNote" class="mode-note"></div>
-
-        <div id="drinkBanner" class="drink-banner hidden"></div>
-
-        <div id="players" class="players"></div>
-
-        <div class="controls">
-          <button id="rollBtn" class="btn primary big">🎲 振る</button>
-          <button id="readyBtn" class="btn">準備OK</button>
-        </div>
-
-        <div class="log-wrap">
-          <h3>実況</h3>
-          <ul id="log" class="log"></ul>
-        </div>
-      </section>
-
-      <section class="rules card">
-        <h3>飲みゲールール</h3>
-        <p style="margin: 0 0 10px">
-          一番強い役の人が勝ち。<b>最下位（一番弱い役）の人が、勝者の役の倍率ぶんだけ飲む。</b>
-        </p>
-        <h3>役と配当（＝飲む杯数）</h3>
-        <ul>
-          <li><b>ピンゾロ</b>（1・1・1）… ×5　最強</li>
-          <li><b>アラシ</b>（ゾロ目）… ×3　数字が大きいほど強い</li>
-          <li><b>シゴロ</b>（4・5・6）… ×2</li>
-          <li><b>出目</b>（ペア＋1つ）… ×1　残り1つの目が大きいほど強い</li>
-          <li><b>役なし</b>… 3回振っても役が出なければ負け（ションベン）</li>
-          <li><b>ヒフミ</b>（1・2・3）… 負け役</li>
-        </ul>
-      </section>
+      </div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="/chinchiro.js"></script>
     <script src="client.js"></script>
   </body>
 </html>
