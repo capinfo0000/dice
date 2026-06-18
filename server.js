@@ -22,6 +22,7 @@ const game = {
   turn: 0, // game.players のインデックス
   round: 0, // 何局目か
   mode: '3', // '3'=3チロ（3個3振り） / '4'=4チロ（4個1振り）
+  lastResult: null, // 直近の局の結果（勝者・飲む人・杯数）
   log: [],
 };
 
@@ -53,6 +54,7 @@ function publicState() {
     mode: game.mode,
     diceCount: modeConf().dice,
     maxRolls: modeConf().rolls,
+    lastResult: game.lastResult,
     players: game.players.map((p) => ({
       id: p.id,
       name: p.name,
@@ -88,6 +90,7 @@ function startRound() {
   game.phase = 'playing';
   game.turn = 0;
   game.round += 1;
+  game.lastResult = null;
   game.players.forEach((p) => {
     p.dice = null;
     p.result = null;
@@ -109,9 +112,10 @@ function maybeStart() {
   }
 }
 
-/** 全員の役を比較して勝者を決める */
+/** 全員の役を比較し、勝者・最下位（飲む人）・杯数を決める */
 function endRound() {
   game.phase = 'roundEnd';
+  game.lastResult = null;
 
   const contenders = game.players.filter((p) => p.result);
   if (contenders.length === 0) {
@@ -119,31 +123,41 @@ function endRound() {
     return;
   }
 
+  // 一番強い役・一番弱い役を求める
   let best = contenders[0];
-  let winners = [best];
-  for (let i = 1; i < contenders.length; i++) {
-    const p = contenders[i];
-    const cmp = C.compare(p.result, best.result);
-    if (cmp > 0) {
-      best = p;
-      winners = [p];
-    } else if (cmp === 0) {
-      winners.push(p);
-    }
+  let worst = contenders[0];
+  for (const p of contenders) {
+    if (C.compare(p.result, best.result) > 0) best = p;
+    if (C.compare(p.result, worst.result) < 0) worst = p;
+  }
+  const winners = contenders.filter((p) => C.compare(p.result, best.result) === 0);
+  const losers = contenders.filter((p) => C.compare(p.result, worst.result) === 0);
+
+  // 全員が同じ強さ＝引き分け（飲みなし）
+  if (winners.length === contenders.length) {
+    game.lastResult = { draw: true };
+    addLog('🤝 引き分け（全員同じ強さ）。飲みなし');
+    return;
   }
 
   const bestInfo = C.YakuInfo[best.result.yaku];
-  if (bestInfo.lose) {
-    addLog('💥 全員ヒフミ／勝ち役なしで引き分け');
-  } else if (winners.length === 1) {
-    const w = winners[0];
-    const pts = Math.max(1, bestInfo.payout);
-    w.score += pts;
-    addLog(`🏆 ${w.name} の勝ち！ ${bestInfo.label}${pointLabel(w.result)} ＋${pts}点`);
-  } else {
-    const names = winners.map((w) => w.name).join('・');
-    addLog(`🤝 引き分け（${bestInfo.label}：${names}）`);
-  }
+  const gulps = Math.max(1, bestInfo.payout); // 勝者の役の倍率ぶん
+  const yakuLabel = bestInfo.label + pointLabel(best.result);
+  const winnerNames = winners.map((w) => w.name);
+  const loserNames = losers.map((l) => l.name);
+
+  // 任意：勝者にポイント加算（単独勝ちのみ）
+  if (winners.length === 1) winners[0].score += gulps;
+
+  game.lastResult = {
+    draw: false,
+    winnerNames,
+    yakuLabel,
+    loserNames,
+    gulps,
+  };
+  addLog(`🏆 ${winnerNames.join('・')}：${yakuLabel}`);
+  addLog(`🍺 ${loserNames.join('・')} が ${gulps}杯 飲む！`);
 }
 
 function resetGame() {
@@ -152,6 +166,7 @@ function resetGame() {
   game.turn = 0;
   game.round = 0;
   game.mode = '3';
+  game.lastResult = null;
   game.log = [];
 }
 

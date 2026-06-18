@@ -183,8 +183,29 @@ function render() {
   renderBanner();
   renderMode();
   reconcilePlayers();
+  renderDrink();
   renderControls(me);
   renderLog();
+}
+
+/** 罰ゲーム（飲む人・杯数）の大きなバナー */
+function renderDrink() {
+  const b = el('drinkBanner');
+  const r = state.lastResult;
+  if (state.phase !== 'roundEnd' || !r) {
+    b.classList.add('hidden');
+    return;
+  }
+  if (r.draw) {
+    b.classList.remove('hidden');
+    b.innerHTML = '<div class="dr-draw">🤝 引き分け！ 飲みなし</div>';
+    return;
+  }
+  b.classList.remove('hidden');
+  b.innerHTML = `
+    <div class="dr-win">🏆 ${escapeHTML(r.winnerNames.join('・'))}　${escapeHTML(r.yakuLabel)}</div>
+    <div class="dr-drink">🍺 ${escapeHTML(r.loserNames.join('・'))}</div>
+    <div class="dr-gulps">${r.gulps} 杯 飲む！</div>`;
 }
 
 function renderMode() {
@@ -247,8 +268,8 @@ function reconcilePlayers() {
     }
   });
 
-  let winnerIds = [];
-  if (state.phase === 'roundEnd') winnerIds = computeWinners();
+  let outcome = { winnerIds: [], loserIds: [] };
+  if (state.phase === 'roundEnd') outcome = computeOutcome();
 
   state.players.forEach((p, idx) => {
     const card = getOrCreateCard(p.id);
@@ -263,7 +284,8 @@ function reconcilePlayers() {
       'turn',
       state.phase === 'playing' && idx === state.turn
     );
-    card.root.classList.toggle('winner', winnerIds.includes(p.id));
+    card.root.classList.toggle('winner', outcome.winnerIds.includes(p.id));
+    card.root.classList.toggle('loser', outcome.loserIds.includes(p.id));
 
     // お皿のタップ可否（自分の番のときだけ）
     const tappable = state.phase === 'playing' && idx === state.turn && p.id === myId;
@@ -477,20 +499,23 @@ function cmp(a, b) {
   if (a.yaku === 'me' || a.yaku === 'arashi') return a.point - b.point;
   return 0;
 }
-function computeWinners() {
+// 勝者（最強）と最下位（飲む人）のidを求める。全員同着なら強調なし。
+function computeOutcome() {
   const c = state.players.filter((p) => p.result);
-  if (c.length === 0) return [];
+  if (c.length === 0) return { winnerIds: [], loserIds: [] };
   let best = c[0];
-  let winners = [best];
-  for (let i = 1; i < c.length; i++) {
-    const r = cmp(c[i].result, best.result);
-    if (r > 0) {
-      best = c[i];
-      winners = [c[i]];
-    } else if (r === 0) winners.push(c[i]);
+  let worst = c[0];
+  for (const p of c) {
+    if (cmp(p.result, best.result) > 0) best = p;
+    if (cmp(p.result, worst.result) < 0) worst = p;
   }
-  if (LOSE[best.result.yaku] || winners.length > 1) return [];
-  return winners.map((w) => w.id);
+  const winners = c.filter((p) => cmp(p.result, best.result) === 0);
+  const losers = c.filter((p) => cmp(p.result, worst.result) === 0);
+  if (winners.length === c.length) return { winnerIds: [], loserIds: [] }; // 引き分け
+  return {
+    winnerIds: winners.map((w) => w.id),
+    loserIds: losers.map((l) => l.id),
+  };
 }
 
 function escapeHTML(s) {
