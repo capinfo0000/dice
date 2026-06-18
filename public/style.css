@@ -51,6 +51,15 @@ body {
 .icon-btn:disabled {
   opacity: 0.45;
 }
+.top-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+#settingsBtn {
+  padding: 7px 12px;
+  font-size: 1rem;
+}
 
 /* 結果タイトル */
 .result-title {
@@ -182,6 +191,9 @@ body {
 /* メインボタン */
 .action {
   margin: 6px 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .action-btn {
   width: 100%;
@@ -196,6 +208,11 @@ body {
 }
 .action-btn:active {
   transform: translateY(1px);
+}
+.action-btn.alt {
+  background: #34301c;
+  border-color: var(--gold);
+  color: var(--gold);
 }
 .action-btn.hidden,
 .hidden {
@@ -344,4 +361,51 @@ body {
 .ov-list li.loser {
   color: #ff8080;
   font-weight: bold;
+}
+
+/* 設定画面 */
+.settings-card {
+  border-color: #4a4a4d;
+  text-align: left;
+}
+.settings-title {
+  font-size: 1.2rem;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 16px;
+}
+.settings-sec {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 4px 0 8px;
+}
+.opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: #1f1f22;
+  border: 1px solid #3a3a3d;
+  border-radius: 12px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.opt input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold);
+  flex: 0 0 auto;
+}
+.opt small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.opt:has(input:checked) {
+  border-color: var(--gold);
+  background: #2c2818;
+}
+.settings-card .action-btn {
+  margin-top: 8px;
 }

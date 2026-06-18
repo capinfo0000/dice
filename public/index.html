@@ -10,7 +10,10 @@
     <div class="app">
       <header class="topbar">
         <span class="title">🎲 チンチロ</span>
-        <button id="modeBtn" class="icon-btn" title="モード切替">3チロ</button>
+        <div class="top-right">
+          <button id="settingsBtn" class="icon-btn" title="設定">⚙</button>
+          <button id="modeBtn" class="icon-btn" title="モード切替">3チロ</button>
+        </div>
       </header>
 
       <!-- 結果タイトル -->
@@ -26,6 +29,7 @@
 
       <!-- メインボタン -->
       <div class="action">
+        <button id="stopBtn" class="action-btn alt hidden">この役で止める</button>
         <button id="actionBtn" class="action-btn">サイコロを振る</button>
       </div>
 
@@ -42,6 +46,21 @@
           <div id="ovGulps" class="ov-gulps"></div>
           <ul id="ovList" class="ov-list"></ul>
           <button id="againBtn" class="action-btn">もう一局</button>
+        </div>
+      </div>
+
+      <!-- 設定画面 -->
+      <div id="settings" class="overlay hidden">
+        <div class="overlay-card settings-card">
+          <div class="settings-title">⚙ 設定</div>
+
+          <div class="settings-sec">止め方（全員共通）</div>
+          <label class="opt">
+            <input type="checkbox" id="yakudomeChk" />
+            <span><b>役どめ</b><br /><small>ON：役が出たら自動で確定（役なしの間だけ振り直し）。<br />OFF：役が出ても最大3回まで自分で振り直せる（「この役で止める」で確定）。</small></span>
+          </label>
+
+          <button id="settingsClose" class="action-btn">閉じる</button>
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@ let participants = []; // 手番が回るプレイヤーのindex（通常は全�
 let turn = 0; // participants 内のindex
 let sdCtx = null; // サドンデスで引き継ぐ情報
 let busy = false; // アニメ中ロック
+let stopMode = localStorage.getItem('chinchiro.stopMode') || 'yaku'; // 'yaku'=役止め / 'manual'=手動
 
 const MAX = 6;
 const diceCount = () => (mode === '4' ? 4 : 3);
@@ -218,9 +219,11 @@ function doRoll() {
 
     // 役確定 or 振り直し
     const isMenashi = h.result.yaku === C.Yaku.MENASHI;
-    if (!isMenashi || h.rolls >= maxRolls()) h.done = true;
+    if (h.rolls >= maxRolls()) h.done = true; // 上限まで振ったら確定
+    else if (stopMode === 'yaku' && !isMenashi) h.done = true; // 役止め：役が出たら自動確定
+    // 手動モードは役が出ても自動確定しない（プレイヤーが「止める」で確定）
 
-    el('resultTitle').textContent = h.result.yaku === C.Yaku.MENASHI && !h.done ? '役なし' : yakuText(h.result);
+    el('resultTitle').textContent = isMenashi && !h.done ? '役なし' : yakuText(h.result);
     const lose = h.result.yaku === C.Yaku.HIFUMI || h.result.yaku === C.Yaku.MENASHI;
     el('resultTitle').className = 'result-title ' + (lose ? 'lose' : 'win');
 
@@ -349,12 +352,20 @@ function render() {
 
   // アクションボタン
   const btn = el('actionBtn');
+  const stop = el('stopBtn');
+  stop.classList.add('hidden');
   if (state === 'over') {
     btn.classList.add('hidden');
+  } else if (h && h.done) {
+    btn.classList.remove('hidden');
+    btn.textContent = turn < participants.length - 1 ? '次へ' : '結果を見る';
   } else {
     btn.classList.remove('hidden');
-    if (h && h.done) {
-      btn.textContent = turn < participants.length - 1 ? '次へ' : '結果を見る';
+    const hasYaku = h && h.result && h.result.yaku !== C.Yaku.MENASHI;
+    // 手動モードで役があり、まだ振れる → 「止める」or「もう一回振る」
+    if (stopMode === 'manual' && hasYaku && h.rolls < maxRolls()) {
+      btn.textContent = 'もう一回振る';
+      stop.classList.remove('hidden');
     } else {
       btn.textContent = 'サイコロを振る';
     }
@@ -429,8 +440,24 @@ function escapeHTML(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// 手動モード：この役で止める
+function onStop() {
+  if (busy) return;
+  const h = hands[curIdx()];
+  if (!h || h.done) return;
+  h.done = true;
+  render();
+}
+
+/* ===== 設定 ===== */
+function openSettings() {
+  el('yakudomeChk').checked = stopMode === 'yaku';
+  el('settings').classList.remove('hidden');
+}
+
 /* ===== 入力 ===== */
 el('actionBtn').onclick = onAction;
+el('stopBtn').onclick = onStop;
 el('bowl').onclick = () => {
   if (state !== 'over' && !busy && hands[curIdx()] && !hands[curIdx()].done) onAction();
 };
@@ -439,6 +466,13 @@ el('modeBtn').onclick = () => {
   if (!canEdit()) return;
   mode = mode === '3' ? '4' : '3';
   newRound();
+};
+el('settingsBtn').onclick = openSettings;
+el('settingsClose').onclick = () => el('settings').classList.add('hidden');
+el('yakudomeChk').onchange = (e) => {
+  stopMode = e.target.checked ? 'yaku' : 'manual';
+  localStorage.setItem('chinchiro.stopMode', stopMode);
+  render();
 };
 
 newRound();
