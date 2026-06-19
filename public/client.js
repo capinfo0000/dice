@@ -16,6 +16,8 @@ let busy = false; // アニメ中ロック
 let stopMode = localStorage.getItem('chinchiro.stopMode') || 'yaku'; // 'yaku'=役止め / 'manual'=手動
 
 const MAX = 6;
+const CHONBO_RATE = 0.01; // チョンボ（サイコロが飛び出す大失敗）の発生確率＝約1%
+const CHONBO_GULPS = 2; // チョンボの罰杯
 const diceCount = () => (mode === '4' ? 4 : 3);
 const maxRolls = () => (state === 'sudden' || mode === '4' ? 1 : 3);
 const curIdx = () => participants[turn];
@@ -109,6 +111,8 @@ function newRound() {
   turn = 0;
   sdCtx = null;
   el('overlay').classList.add('hidden');
+  el('overlay').classList.remove('chonbo');
+  el('bowl').classList.remove('chonbo-fly');
   showIdle();
   render();
 }
@@ -129,6 +133,7 @@ function showIdle() {
   dice.forEach((d) => {
     d.style.transform = `rotate(${rnd(-12, 12)}deg)`;
     d.style.transition = '';
+    d.style.opacity = '1';
     setFace(d, Math.ceil(rnd(0.001, 6)));
   });
   el('resultTitle').textContent = state === 'sudden' ? 'サドンデス！' : '　';
@@ -142,6 +147,8 @@ function doRoll() {
   if (h.done) return;
   resumeAudio();
   busy = true;
+
+  const chonbo = Math.random() < CHONBO_RATE; // 約1%でチョンボ
 
   h.dice = C.rollDice(diceCount());
   h.rolls += 1;
@@ -158,8 +165,10 @@ function doRoll() {
   const spin = () => dice.forEach((d) => setFace(d, Math.ceil(rnd(0.001, 6))));
 
   // ① 鉢の上から落とす（落下開始位置：上方・大きく回転）
+  el('bowl').classList.remove('chonbo-fly');
   dice.forEach((d) => {
     d.style.transition = 'none';
+    d.style.opacity = '1';
     d.style.transform = `translate(${rnd(-30, 30)}px,-150px) rotate(${rnd(-220, 220)}deg)`;
     setFace(d, Math.ceil(rnd(0.001, 6)));
   });
@@ -194,6 +203,23 @@ function doRoll() {
     });
   }, 405);
 
+  // チョンボ：着地後にサイコロが鉢から飛び出す → 即負け
+  if (chonbo) {
+    setTimeout(() => {
+      clearInterval(faceTimer);
+      clearInterval(sfx);
+      flyOut(dice);
+      document.querySelector('.app').classList.add('shake');
+      el('resultTitle').textContent = '💦 チョンボ！';
+      el('resultTitle').className = 'result-title lose';
+      playClack(0.5, 400);
+      setTimeout(() => playClack(0.4, 300), 90);
+      setTimeout(() => document.querySelector('.app').classList.remove('shake'), 520);
+      setTimeout(() => finishChonbo(idx), 760);
+    }, 470);
+    return;
+  }
+
   // ⑤ 小さく転がって減速
   setTimeout(() => {
     playClack(0.25, 1500);
@@ -219,7 +245,9 @@ function doRoll() {
 
     // 役確定 or 振り直し
     const isMenashi = h.result.yaku === C.Yaku.MENASHI;
+    const isHifumi = h.result.yaku === C.Yaku.HIFUMI;
     if (h.rolls >= maxRolls()) h.done = true; // 上限まで振ったら確定
+    else if (isHifumi) h.done = true; // ヒフミは振り直しなしで即確定（次のプレイヤーへ）
     else if (stopMode === 'yaku' && !isMenashi) h.done = true; // 役止め：役が出たら自動確定
     // 手動モードは役が出ても自動確定しない（プレイヤーが「止める」で確定）
 
@@ -230,6 +258,41 @@ function doRoll() {
     busy = false;
     render();
   }, 920);
+}
+
+// チョンボ：サイコロが鉢の外へ飛び出す演出
+function flyOut(dice) {
+  el('bowl').classList.add('chonbo-fly');
+  dice.forEach((d) => {
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    d.style.transition = 'transform .55s cubic-bezier(.15,.7,.4,1), opacity .55s ease-in';
+    d.style.transform = `translate(${dir * rnd(170, 320)}px,${rnd(-360, -210)}px) rotate(${rnd(-600, 600)}deg)`;
+    d.style.opacity = '0';
+  });
+}
+
+// チョンボ確定：即負け → やり直し
+function finishChonbo(idx) {
+  state = 'over';
+  el('overlay').classList.add('chonbo');
+  el('ovWinner').textContent = '💦 チョンボ！';
+  el('ovSd').textContent = 'サイコロを飛ばした… 即負け！';
+  el('ovLoser').textContent = players[idx].name;
+  el('ovGulps').textContent = `${CHONBO_GULPS} 杯 飲んでやり直し！`;
+
+  const list = el('ovList');
+  list.innerHTML = '';
+  players.forEach((p, i) => {
+    const li = document.createElement('li');
+    if (i === idx) li.className = 'loser';
+    li.innerHTML = `<span>${escapeHTML(p.name)}</span><span>${i === idx ? 'チョンボ' : '—'}</span>`;
+    list.appendChild(li);
+  });
+
+  el('againBtn').textContent = 'やり直し';
+  el('overlay').classList.remove('hidden');
+  busy = false;
+  render();
 }
 
 function onAction() {
@@ -304,6 +367,8 @@ function endSudden() {
 
 function finishOver(ctx, loserIdxs, sudden) {
   state = 'over';
+  el('overlay').classList.remove('chonbo');
+  el('againBtn').textContent = 'もう一局';
   const winnerLine =
     ctx.winnerNames && ctx.winnerNames.length
       ? `🏆 ${ctx.winnerNames.join('・')}　${ctx.yakuLabel}`
@@ -361,8 +426,9 @@ function render() {
     btn.textContent = turn < participants.length - 1 ? '次へ' : '結果を見る';
   } else {
     btn.classList.remove('hidden');
-    const hasYaku = h && h.result && h.result.yaku !== C.Yaku.MENASHI;
-    // 手動モードで役があり、まだ振れる → 「止める」or「もう一回振る」
+    const hasYaku =
+      h && h.result && h.result.yaku !== C.Yaku.MENASHI && h.result.yaku !== C.Yaku.HIFUMI;
+    // 手動モードで役があり、まだ振れる → 「止める」or「もう一回振る」（ヒフミは即確定なので対象外）
     if (stopMode === 'manual' && hasYaku && h.rolls < maxRolls()) {
       btn.textContent = 'もう一回振る';
       stop.classList.remove('hidden');
