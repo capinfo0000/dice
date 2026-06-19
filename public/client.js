@@ -14,6 +14,7 @@ let turn = 0; // participants 内のindex
 let sdCtx = null; // サドンデスで引き継ぐ情報
 let busy = false; // アニメ中ロック
 let stopMode = localStorage.getItem('chinchiro.stopMode') || 'yaku'; // 'yaku'=役止め / 'manual'=手動
+let dice456 = localStorage.getItem('chinchiro.dice456') === '1'; // 456サイコロ（4〜6しか出ない）
 
 const MAX = 6;
 const CHONBO_RATE = 0.01; // チョンボ（サイコロが飛び出す大失敗）の発生確率＝約1%
@@ -103,6 +104,16 @@ function ensureDice(n) {
 }
 const rnd = (a, b) => a + Math.random() * (b - a);
 
+// 出目の生成（456サイコロモードなら 4〜6 のみ）
+function rollN(n) {
+  if (dice456) return Array.from({ length: n }, () => 4 + Math.floor(Math.random() * 3));
+  return C.rollDice(n);
+}
+// 演出用のランダムな目（456モードを反映）
+function randFace() {
+  return dice456 ? 4 + Math.floor(Math.random() * 3) : Math.ceil(rnd(0.001, 6));
+}
+
 /* ===== ゲーム進行 ===== */
 function newRound() {
   state = 'play';
@@ -134,7 +145,7 @@ function showIdle() {
     d.style.transform = `rotate(${rnd(-12, 12)}deg)`;
     d.style.transition = '';
     d.style.opacity = '1';
-    setFace(d, Math.ceil(rnd(0.001, 6)));
+    setFace(d, randFace());
   });
   el('resultTitle').textContent = state === 'sudden' ? 'サドンデス！' : '　';
   el('resultTitle').className = 'result-title' + (state === 'sudden' ? ' sd' : '');
@@ -150,7 +161,7 @@ function doRoll() {
 
   const chonbo = Math.random() < CHONBO_RATE; // 約1%でチョンボ
 
-  h.dice = C.rollDice(diceCount());
+  h.dice = rollN(diceCount());
   h.rolls += 1;
   h.result = C.judgeHand(h.dice);
 
@@ -162,7 +173,7 @@ function doRoll() {
   el('resultTitle').className = 'result-title rolling';
   renderDots(h.rolls, true);
 
-  const spin = () => dice.forEach((d) => setFace(d, Math.ceil(rnd(0.001, 6))));
+  const spin = () => dice.forEach((d) => setFace(d, randFace()));
 
   // ① 鉢の上から落とす（落下開始位置：上方・大きく回転）
   el('bowl').classList.remove('chonbo-fly');
@@ -170,7 +181,7 @@ function doRoll() {
     d.style.transition = 'none';
     d.style.opacity = '1';
     d.style.transform = `translate(${rnd(-30, 30)}px,-150px) rotate(${rnd(-220, 220)}deg)`;
-    setFace(d, Math.ceil(rnd(0.001, 6)));
+    setFace(d, randFace());
   });
   void wrap.offsetWidth; // リフローで開始位置を確定
 
@@ -407,8 +418,8 @@ function renderDots(used, active) {
 }
 
 function render() {
-  // モードボタン
-  el('modeBtn').textContent = mode === '4' ? '4チロ' : '3チロ';
+  // モードボタン（456サイコロ時はバッジ表示）
+  el('modeBtn').textContent = (mode === '4' ? '4チロ' : '3チロ') + (dice456 ? '・456' : '');
   el('modeBtn').disabled = !canEdit();
 
   // ドット（現手番のrolls）
@@ -518,6 +529,7 @@ function onStop() {
 /* ===== 設定 ===== */
 function openSettings() {
   el('yakudomeChk').checked = stopMode === 'yaku';
+  el('dice456Chk').checked = dice456;
   el('settings').classList.remove('hidden');
 }
 
@@ -539,6 +551,11 @@ el('yakudomeChk').onchange = (e) => {
   stopMode = e.target.checked ? 'yaku' : 'manual';
   localStorage.setItem('chinchiro.stopMode', stopMode);
   render();
+};
+el('dice456Chk').onchange = (e) => {
+  dice456 = e.target.checked;
+  localStorage.setItem('chinchiro.dice456', dice456 ? '1' : '0');
+  newRound(); // 局をリセットして反映
 };
 
 newRound();
