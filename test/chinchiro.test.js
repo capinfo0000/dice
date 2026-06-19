@@ -1,6 +1,6 @@
 // チンチロのロジックの簡易テスト（外部ライブラリ不要）
 const assert = require('assert');
-const C = require('../chinchiro');
+const C = require('../docs/chinchiro');
 
 function judgeYaku(dice) {
   return C.judge(dice).yaku;

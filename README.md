@@ -6,7 +6,18 @@
 
 サーバーは静的配信だけ。ゲームはすべてブラウザ内（ローカル）で動きます。
 
-## 起動方法
+## ブラウザで遊ぶ（GitHub Pages）
+
+アプリは `docs/` 配下だけで完結する**静的サイト**なので、GitHub Pages でそのまま公開できます。
+
+1. GitHub のリポジトリ → **Settings** → **Pages**
+2. **Build and deployment** → Source を **Deploy from a branch**
+3. Branch を **`claude/chinchiro-web-app-bzl8g4`**、フォルダを **`/docs`** にして **Save**
+4. 数十秒後に `https://capinfo0000.github.io/dice/` で公開されます
+
+※ プライベートリポジトリの場合、GitHub Pages の利用には有料プランが必要です（パブリックなら無料）。
+
+## 起動方法（ローカル）
 
 ```bash
 npm install
@@ -14,7 +25,7 @@ npm start
 ```
 
 ブラウザで <http://localhost:3000> を開くだけ。
-（`public/index.html` を直接開いても動きます）
+（`docs/index.html` をブラウザで直接開いても動きます）
 
 ## 遊び方
 
@@ -65,9 +76,10 @@ npm start
 
 ## 構成
 
-- `chinchiro.js` … 役判定・比較・精算のロジック（ブラウザ／Node 両対応）
-- `public/` … フロントエンド（HTML / CSS / ゲーム本体 client.js）
-- `server.js` … 静的配信サーバー（Express）
+- `docs/` … 静的サイト一式（GitHub Pages の公開フォルダ）
+  - `index.html` / `style.css` / `client.js` … フロントエンド
+  - `chinchiro.js` … 役判定・比較・精算のロジック（ブラウザ／Node 両対応）
+- `server.js` … ローカル確認用の静的配信サーバー（Express）
 - `test/chinchiro.test.js` … ロジックのテスト（`npm test`）
 
 ## テスト
