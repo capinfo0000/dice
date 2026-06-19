@@ -5,7 +5,11 @@ const C = window.Chinchiro;
 const el = (id) => document.getElementById(id);
 
 /* ===== 状態 ===== */
-let mode = '3'; // '3'=3チロ（3個3振り） / '4'=4チロ（4個1振り）
+const num = (k, d) => {
+  const v = parseFloat(localStorage.getItem(k));
+  return Number.isFinite(v) ? v : d;
+};
+let mode = localStorage.getItem('chinchiro.mode') || '3'; // '3'=3チロ / '4'=4チロ
 let players = [{ name: 'プレイヤー1' }, { name: 'プレイヤー2' }];
 let hands = []; // players と整列：{dice,result,rolls,done}
 let state = 'play'; // 'play' | 'sudden' | 'over'
@@ -15,12 +19,16 @@ let sdCtx = null; // サドンデスで引き継ぐ情報
 let busy = false; // アニメ中ロック
 let stopMode = localStorage.getItem('chinchiro.stopMode') || 'yaku'; // 'yaku'=役止め / 'manual'=手動
 let dice456 = localStorage.getItem('chinchiro.dice456') === '1'; // 456サイコロ（4〜6しか出ない）
+let maxThrows = num('chinchiro.maxThrows', 3); // 3チロの最大振り直し回数（1〜3）
+let chonboOn = localStorage.getItem('chinchiro.chonboOn') !== '0'; // チョンボの有無（既定ON）
+let chonboRate = num('chinchiro.chonboRate', 0.01); // チョンボ発生確率
+let soundOn = localStorage.getItem('chinchiro.soundOn') !== '0'; // 効果音の有無（既定ON）
+let soundVol = num('chinchiro.soundVol', 1); // 効果音の音量（0〜1）
 
 const MAX = 6;
-const CHONBO_RATE = 0.01; // チョンボ（サイコロが飛び出す大失敗）の発生確率＝約1%
 const CHONBO_GULPS = 2; // チョンボの罰杯
 const diceCount = () => (mode === '4' ? 4 : 3);
-const maxRolls = () => (state === 'sudden' || mode === '4' ? 1 : 3);
+const maxRolls = () => (state === 'sudden' || mode === '4' ? 1 : maxThrows);
 const curIdx = () => participants[turn];
 const canEdit = () =>
   state === 'play' && turn === 0 && hands[participants[0]] && hands[participants[0]].rolls === 0;
@@ -39,6 +47,7 @@ function resumeAudio() {
   if (ctx && ctx.state === 'suspended') ctx.resume();
 }
 function playClack(volume = 0.35, freq = 1500) {
+  if (!soundOn) return;
   const ctx = ac();
   if (!ctx) return;
   const len = Math.floor(ctx.sampleRate * 0.07);
@@ -52,11 +61,12 @@ function playClack(volume = 0.35, freq = 1500) {
   bp.frequency.value = freq + Math.random() * 600;
   bp.Q.value = 1.1;
   const g = ctx.createGain();
-  g.gain.value = volume;
+  g.gain.value = volume * soundVol;
   src.connect(bp).connect(g).connect(ctx.destination);
   src.start();
 }
 function playDrop() {
+  if (!soundOn) return;
   const ctx = ac();
   if (!ctx) return;
   playClack(0.4, 600);
@@ -65,7 +75,7 @@ function playDrop() {
   osc.type = 'sine';
   osc.frequency.setValueAtTime(220, ctx.currentTime);
   osc.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.12);
-  g.gain.setValueAtTime(0.25, ctx.currentTime);
+  g.gain.setValueAtTime(0.25 * soundVol, ctx.currentTime);
   g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
   osc.connect(g).connect(ctx.destination);
   osc.start();
@@ -159,7 +169,7 @@ function doRoll() {
   resumeAudio();
   busy = true;
 
-  const chonbo = Math.random() < CHONBO_RATE; // 約1%でチョンボ
+  const chonbo = chonboOn && Math.random() < chonboRate; // チョンボ発生判定
 
   h.dice = rollN(diceCount());
   h.rolls += 1;
@@ -527,9 +537,30 @@ function onStop() {
 }
 
 /* ===== 設定 ===== */
+// セグメント（ボタン群）の選択表示
+function setSeg(groupId, value) {
+  document.querySelectorAll('#' + groupId + ' button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.v === String(value));
+  });
+}
+function bindSeg(groupId, onPick) {
+  document.querySelectorAll('#' + groupId + ' button').forEach((b) => {
+    b.onclick = () => {
+      setSeg(groupId, b.dataset.v);
+      onPick(b.dataset.v);
+    };
+  });
+}
+
 function openSettings() {
   el('yakudomeChk').checked = stopMode === 'yaku';
   el('dice456Chk').checked = dice456;
+  el('chonboChk').checked = chonboOn;
+  el('soundChk').checked = soundOn;
+  el('volRange').value = Math.round(soundVol * 100);
+  setSeg('segMode', mode);
+  setSeg('segThrows', maxThrows);
+  setSeg('segChonbo', chonboRate);
   el('settings').classList.remove('hidden');
 }
 
@@ -543,10 +574,12 @@ el('againBtn').onclick = () => newRound();
 el('modeBtn').onclick = () => {
   if (!canEdit()) return;
   mode = mode === '3' ? '4' : '3';
+  localStorage.setItem('chinchiro.mode', mode);
   newRound();
 };
 el('settingsBtn').onclick = openSettings;
 el('settingsClose').onclick = () => el('settings').classList.add('hidden');
+
 el('yakudomeChk').onchange = (e) => {
   stopMode = e.target.checked ? 'yaku' : 'manual';
   localStorage.setItem('chinchiro.stopMode', stopMode);
@@ -556,6 +589,45 @@ el('dice456Chk').onchange = (e) => {
   dice456 = e.target.checked;
   localStorage.setItem('chinchiro.dice456', dice456 ? '1' : '0');
   newRound(); // 局をリセットして反映
+};
+bindSeg('segMode', (v) => {
+  mode = v;
+  localStorage.setItem('chinchiro.mode', mode);
+  newRound();
+});
+bindSeg('segThrows', (v) => {
+  maxThrows = parseInt(v, 10);
+  localStorage.setItem('chinchiro.maxThrows', maxThrows);
+  newRound();
+});
+el('chonboChk').onchange = (e) => {
+  chonboOn = e.target.checked;
+  localStorage.setItem('chinchiro.chonboOn', chonboOn ? '1' : '0');
+};
+bindSeg('segChonbo', (v) => {
+  chonboRate = parseFloat(v);
+  localStorage.setItem('chinchiro.chonboRate', chonboRate);
+  if (!chonboOn) {
+    chonboOn = true; // 確率を選んだら自動でON
+    el('chonboChk').checked = true;
+    localStorage.setItem('chinchiro.chonboOn', '1');
+  }
+});
+el('soundChk').onchange = (e) => {
+  soundOn = e.target.checked;
+  localStorage.setItem('chinchiro.soundOn', soundOn ? '1' : '0');
+  if (soundOn) {
+    resumeAudio();
+    playClack(0.4, 1200); // 試聴
+  }
+};
+el('volRange').oninput = (e) => {
+  soundVol = (parseInt(e.target.value, 10) || 0) / 100;
+  localStorage.setItem('chinchiro.soundVol', soundVol);
+};
+el('volRange').onchange = () => {
+  resumeAudio();
+  playClack(0.4, 1200); // 離したときに試聴
 };
 
 newRound();

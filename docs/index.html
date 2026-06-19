@@ -66,6 +66,42 @@
             <span><b>456サイコロ</b><br /><small>4・5・6しか出ないイカサマ賽。シゴロやゾロ目が出やすい。</small></span>
           </label>
 
+          <div class="settings-sec">モード</div>
+          <div class="seg" id="segMode">
+            <button data-v="3">3チロ（3個）</button>
+            <button data-v="4">4チロ（4個）</button>
+          </div>
+
+          <div class="settings-sec">最大振り直し回数（3チロ）</div>
+          <div class="seg" id="segThrows">
+            <button data-v="1">1回</button>
+            <button data-v="2">2回</button>
+            <button data-v="3">3回</button>
+          </div>
+
+          <div class="settings-sec">チョンボ</div>
+          <label class="opt">
+            <input type="checkbox" id="chonboChk" />
+            <span><b>チョンボあり</b><br /><small>サイコロが鉢から飛び出す大失敗。出た人は即負けでやり直し。</small></span>
+          </label>
+          <div class="seg" id="segChonbo">
+            <button data-v="0.01">1%</button>
+            <button data-v="0.03">3%</button>
+            <button data-v="0.05">5%</button>
+            <button data-v="0.1">10%</button>
+          </div>
+
+          <div class="settings-sec">効果音</div>
+          <label class="opt">
+            <input type="checkbox" id="soundChk" />
+            <span><b>効果音</b><br /><small>サイコロの音などの ON / OFF。</small></span>
+          </label>
+          <div class="vol">
+            <span>🔈</span>
+            <input type="range" id="volRange" min="0" max="100" />
+            <span>🔊</span>
+          </div>
+
           <button id="settingsClose" class="action-btn">閉じる</button>
         </div>
       </div>
