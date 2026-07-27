@@ -12,6 +12,21 @@
 | その他 | 静的サイト（docs/ だけで完結）/ テストは Node 標準 assert / サイコロ演出は CSS アニメ |
 | フェーズ | 公開・運用（完成） |
 
+## FW（フレームワーク）・DB（データベース）・ツール等
+```
+Express
+Web Audio API
+localStorage
+Node.js
+Git
+GitHub
+GitHub Pages
+CORESERVER
+```
+- FW：Express（ローカル確認用の静的配信サーバーのみ。フロントはフレームワーク不使用の素の JS）
+- DB：なし（設定・プレイヤー名は localStorage に保存）
+- ツール等：Node.js（実行・テスト）／ Git・GitHub（バージョン管理）／ GitHub Pages・CORESERVER（ホスティング）／ Web Audio API（効果音生成）
+
 ## 背景
 飲み会・レク用に、インストール不要でブラウザだけで遊べるチンチロを作成。1 台の端末を
 回して複数人で遊ぶローカルプレイ方式。サーバー・DB 不要で、静的ホスティング
